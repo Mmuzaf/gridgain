@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.internal.IgniteEx;
@@ -39,6 +40,10 @@ import static org.apache.ignite.util.GridCommandHandlerIndexingUtils.GROUP_NAME;
  * {@link GridCommandHandlerIndexingClusterByClassTest}.
  */
 public class GridCommandHandlerIndexingTest extends GridCommandHandlerClusterPerMethodAbstractTest {
+
+    /** */
+    public static final int GRID_CNT = 2;
+
     /** */
     @Test
     public void testValidateIndexesFailedOnNotIdleCluster() throws Exception {
@@ -70,7 +75,7 @@ public class GridCommandHandlerIndexingTest extends GridCommandHandlerClusterPer
 
             injectTestSystemOut();
 
-            assertEquals(EXIT_CODE_OK, execute("--cache", "validate_indexes", CACHE_NAME));
+            assertEquals(EXIT_CODE_OK, execute("--cache", "validate_indexes", "--check-crc", CACHE_NAME));
         }
         finally {
             stopFlag.set(true);
@@ -85,10 +90,10 @@ public class GridCommandHandlerIndexingTest extends GridCommandHandlerClusterPer
     }
 
     /**
-     * Tests that corrupted pages in the index partition are detected.
+     * Tests with checkCrc=true that corrupted pages in the index partition are detected.
      */
     @Test
-    public void testCorruptedIndexPartitionShouldFailValidation() throws Exception {
+    public void testCorruptedIndexPartitionShouldFailValidationWithCrc() throws Exception {
         Ignite ignite = prepareGridForTest();
 
         forceCheckpoint();
@@ -97,9 +102,33 @@ public class GridCommandHandlerIndexingTest extends GridCommandHandlerClusterPer
 
         stopAllGrids();
 
-        corruptIndexPartition(idxPath);
+        corruptIndexPartition(idxPath, 1024, 4096);
 
-        startGrids(2);
+        startGrids(GRID_CNT);
+
+        awaitPartitionMapExchange();
+
+        injectTestSystemOut();
+
+        assertEquals(EXIT_CODE_OK, execute("--cache", "validate_indexes", "--check-crc", CACHE_NAME));
+
+        assertContains(log, testOut.toString(), "issues found (listed above)");
+    }
+
+    /**
+     * Tests with that corrupted pages in the index partition are detected.
+     */
+    @Test
+    public void testCorruptedIndexPartitionShouldFailValidationWithoutCrc() throws Exception {
+        Ignite ignite = prepareGridForTest();
+
+        forceCheckpoint();
+
+        stopAllGrids();
+
+        File idxPath = indexPartition(ignite, GROUP_NAME);
+        corruptIndexPartition(idxPath, 2, 37248);
+        startGrids(GRID_CNT);
 
         awaitPartitionMapExchange();
 
@@ -116,7 +145,7 @@ public class GridCommandHandlerIndexingTest extends GridCommandHandlerClusterPer
      * @throws Exception
      */
     private Ignite prepareGridForTest() throws Exception{
-        Ignite ignite = startGrids(2);
+        Ignite ignite = startGrids(GRID_CNT);
 
         ignite.cluster().active(true);
 
@@ -141,17 +170,17 @@ public class GridCommandHandlerIndexingTest extends GridCommandHandlerClusterPer
     /**
      * Write some random trash in index partition.
      */
-    private void corruptIndexPartition(File path) throws IOException {
+    private void corruptIndexPartition(File path, int size, int offset) throws IOException {
         assertTrue(path.exists());
 
         ThreadLocalRandom rand = ThreadLocalRandom.current();
 
         try (RandomAccessFile idx = new RandomAccessFile(path, "rw")) {
-            byte[] trash = new byte[1024];
+            byte[] trash = new byte[size];
 
             rand.nextBytes(trash);
 
-            idx.seek(4096);
+            idx.seek(offset);
 
             idx.write(trash);
         }
