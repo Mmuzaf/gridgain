@@ -18,13 +18,10 @@ package org.apache.ignite.internal.processors.platform.client;
 
 import org.apache.ignite.internal.binary.BinaryWriterExImpl;
 import org.apache.ignite.internal.processors.authentication.AuthorizationContext;
-import org.apache.ignite.internal.processors.odbc.ClientListenerProtocolVersion;
 import org.apache.ignite.internal.processors.odbc.ClientListenerRequest;
 import org.apache.ignite.internal.processors.odbc.ClientListenerRequestHandler;
 import org.apache.ignite.internal.processors.odbc.ClientListenerResponse;
 import org.apache.ignite.plugin.security.SecurityException;
-
-import static org.apache.ignite.internal.processors.platform.client.ClientConnectionContext.VER_1_4_0;
 
 /**
  * Thin client request handler.
@@ -36,22 +33,22 @@ public class ClientRequestHandler implements ClientListenerRequestHandler {
     /** Auth context. */
     private final AuthorizationContext authCtx;
 
-    /** Protocol version. */
-    ClientListenerProtocolVersion ver;
+    /** Protocol context. */
+    private ClientProtocolContext protocolContext;
 
     /**
      * Constructor.
      *
      * @param ctx Kernal context.
      * @param authCtx Authentication context.
-     * @param ver Protocol version.
+     * @param protocolContext Protocol context.
      */
-    ClientRequestHandler(ClientConnectionContext ctx, AuthorizationContext authCtx, ClientListenerProtocolVersion ver) {
+    ClientRequestHandler(ClientConnectionContext ctx, AuthorizationContext authCtx, ClientProtocolContext protocolContext) {
         assert ctx != null;
 
         this.ctx = ctx;
         this.authCtx = authCtx;
-        this.ver = ver;
+        this.protocolContext = protocolContext;
     }
 
     /** {@inheritDoc} */
@@ -83,9 +80,8 @@ public class ClientRequestHandler implements ClientListenerRequestHandler {
     @Override public void writeHandshake(BinaryWriterExImpl writer) {
         writer.writeBoolean(true);
 
-        if (ver.compareTo(VER_1_4_0) >= 0) {
+        if (protocolContext.isPartitionAwarenessSupported())
             writer.writeUuid(ctx.kernalContext().localNodeId());
-        }
     }
 
     /** {@inheritDoc} */
