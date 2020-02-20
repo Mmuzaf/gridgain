@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.processors.query.h2.database.inlinecolumn;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -45,6 +46,7 @@ import org.h2.value.ValueBoolean;
 import org.h2.value.ValueByte;
 import org.h2.value.ValueBytes;
 import org.h2.value.ValueDate;
+import org.h2.value.ValueDecimal;
 import org.h2.value.ValueDouble;
 import org.h2.value.ValueFloat;
 import org.h2.value.ValueInt;
@@ -486,6 +488,20 @@ public class InlineIndexColumnTest extends AbstractIndexingCommonTest {
                 pageMem.releasePage(CACHE_ID, pageId, page);
             pageMem.stop(true);
         }
+    }
+
+    /** */
+    @Test
+    public void testDecimal() throws Exception {
+        int maxSize = 1 + 4; // 1 byte header + 4 bytes value.
+
+        assertEquals(-2, putAndCompare(new DecimalFloat(123456.7f), new DecimalFloat(123456.7f), DecimalFloat.class, maxSize));
+        assertEquals(-1, putAndCompare(new DecimalFloat(-123456.7f), new DecimalFloat(123456.7f), DecimalFloat.class, maxSize));
+        assertEquals(1, putAndCompare(new DecimalFloat(1234567f), new DecimalFloat(-1234567f), DecimalFloat.class, maxSize));
+        assertEquals(-1, putAndCompare(new DecimalFloat(-0.0000000000000000000001234567f), new DecimalFloat(0.0000000000000000000001234567f), DecimalFloat.class, maxSize));
+        assertEquals(1, putAndCompare(new DecimalFloat(000.1234567000000f), new DecimalFloat(-000.1234567000000f), DecimalFloat.class, maxSize));
+        assertEquals(-1, putAndCompare(new DecimalFloat(123.4567f), new DecimalFloat(123.4568f), DecimalFloat.class, maxSize));
+        assertEquals(1, putAndCompare(new DecimalFloat(1.234568f), new DecimalFloat(1.234567f), DecimalFloat.class, maxSize));
     }
 
     /** */
@@ -935,6 +951,9 @@ public class InlineIndexColumnTest extends AbstractIndexingCommonTest {
 
             case Value.JAVA_OBJECT:
                 return ValueJavaObject.getNoCopy(marsh.marshal(val), null, null);
+
+            case Value.DECIMAL:
+                return ValueDecimal.get(BigDecimal.valueOf(((DecimalFloat)val).val));
         }
 
         throw new IllegalStateException("Unknown value type: type=" + type + ", cls=" + cls.getName());
@@ -986,6 +1005,9 @@ public class InlineIndexColumnTest extends AbstractIndexingCommonTest {
         if (IgnoreCaseString.class.isAssignableFrom(cls))
             return Value.STRING_IGNORECASE;
 
+        if (DecimalFloat.class.isAssignableFrom(cls))
+            return Value.DECIMAL;
+
         return Value.JAVA_OBJECT;
     }
 
@@ -1008,6 +1030,17 @@ public class InlineIndexColumnTest extends AbstractIndexingCommonTest {
 
         /** */
         public IgnoreCaseString(String val) {
+            this.val = val;
+        }
+    }
+
+    /** Class wrapper, necessary to distinguish float and float used to create decimal. */
+    private static class DecimalFloat {
+        /** */
+        private final Float val;
+
+        /** */
+        public DecimalFloat(Float val) {
             this.val = val;
         }
     }

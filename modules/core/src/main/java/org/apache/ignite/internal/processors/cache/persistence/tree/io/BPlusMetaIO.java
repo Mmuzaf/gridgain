@@ -60,7 +60,10 @@ public class BPlusMetaIO extends PageIO {
     private static final long FLAG_INLINE_OBJECT_HASH = 4L;
 
     /** */
-    public static final long DEFAULT_FLAGS = FLAG_UNWRAPPED_PK | FLAG_INLINE_OBJECT_SUPPORTED | FLAG_INLINE_OBJECT_HASH;
+    private static final long FLAG_DECIMAL_SUPPORTED = 8L;
+
+    /** */
+    public static final long DEFAULT_FLAGS = FLAG_UNWRAPPED_PK | FLAG_INLINE_OBJECT_SUPPORTED | FLAG_INLINE_OBJECT_HASH | FLAG_DECIMAL_SUPPORTED;
 
     /** */
     private final int refsOff;
@@ -244,6 +247,16 @@ public class BPlusMetaIO extends PageIO {
     }
 
     /**
+      * @param pageAddr Page address.
+      * @return {@code true} In case decimal is supported by the tree.
+      */
+    public boolean inlineDecimalSupported(long pageAddr) {
+        assert supportFlags();
+
+        return (flags(pageAddr) & FLAG_DECIMAL_SUPPORTED) != 0L;
+    }
+
+    /**
      * @return {@code true} If flags are supported.
      */
     public boolean supportFlags() {
@@ -305,12 +318,14 @@ public class BPlusMetaIO extends PageIO {
      * @param pageAddr Page address.
      * @param unwrappedPk unwrapped primary key of this tree flag.
      * @param inlineObjSupported inline POJO by created tree flag.
+     * @param inlineDcSupported inline decimal by created tree flag.
      */
-    public void setFlags(long pageAddr, boolean unwrappedPk, boolean inlineObjSupported) {
+    public void setFlags(long pageAddr, boolean unwrappedPk, boolean inlineObjSupported, boolean inlineDcSupported) {
         assert supportFlags();
 
         long flags = unwrappedPk ? FLAG_UNWRAPPED_PK : 0;
         flags |= inlineObjSupported ? FLAG_INLINE_OBJECT_SUPPORTED : 0;
+        flags |= inlineDcSupported ? FLAG_DECIMAL_SUPPORTED : 0;
 
         PageUtils.putLong(pageAddr, FLAGS_OFFSET, flags);
     }
@@ -328,10 +343,11 @@ public class BPlusMetaIO extends PageIO {
     /**
      * @param pageAddr Page address.
      * @param inlineObjSupported Supports inline object flag.
+     * @param inlineDcSupported Supports decimal flag.
      * @param unwrappedPk Unwrap PK flag.
      * @param pageSize Page size.
      */
-    public static void upgradePageVersion(long pageAddr, boolean inlineObjSupported, boolean unwrappedPk, int pageSize) {
+    public static void upgradePageVersion(long pageAddr, boolean inlineObjSupported, boolean inlineDcSupported, boolean unwrappedPk, int pageSize) {
         BPlusMetaIO ioPrev = VERSIONS.forPage(pageAddr);
 
         long[] lvls = new long[ioPrev.getLevelsCount(pageAddr)];
@@ -352,6 +368,6 @@ public class BPlusMetaIO extends PageIO {
 
         ioNew.setInlineSize(pageAddr, inlineSize);
         ioNew.setCreatedVersion(pageAddr, IgniteVersionUtils.VER);
-        ioNew.setFlags(pageAddr, unwrappedPk, inlineObjSupported);
+        ioNew.setFlags(pageAddr, unwrappedPk, inlineObjSupported, inlineDcSupported);
     }
 }

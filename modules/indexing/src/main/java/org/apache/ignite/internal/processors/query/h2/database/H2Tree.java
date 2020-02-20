@@ -18,6 +18,7 @@ package org.apache.ignite.internal.processors.query.h2.database;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -243,12 +244,27 @@ public class H2Tree extends BPlusTree<H2Row, H2Row> {
 
             boolean inlineObjSupported = inlineSize > 0 && inlineObjectSupported(metaInfo, inlineIdxs0);
 
-            inlineIdxs = inlineObjSupported ? inlineIdxs0 : inlineIdxs0.stream()
-                .filter(ih -> ih.type() != Value.JAVA_OBJECT)
-                .collect(Collectors.toList());
+            boolean inlineDcSupported = inlineSize > 0 && metaInfo.flagsSupported() && metaInfo.inlineDecimalSupported();
+
+            if (!inlineObjSupported || !inlineDcSupported) {
+                boolean dc = false;
+
+                Iterator<InlineIndexColumn> it = inlineIdxs0.iterator();
+                while (it.hasNext()) {
+                    InlineIndexColumn ih = it.next();
+
+                    if (!inlineDcSupported && ih.type() == Value.DECIMAL)
+                        dc = true;
+
+                    if (dc || (!inlineObjSupported && ih.type() == Value.JAVA_OBJECT))
+                        it.remove();
+                }
+            }
+
+            inlineIdxs = inlineIdxs0;
 
             if (!metaInfo.flagsSupported())
-                upgradeMetaPage(inlineObjSupported);
+                upgradeMetaPage(inlineObjSupported, false);
         }
         else {
             unwrappedPk = true;
@@ -446,9 +462,10 @@ public class H2Tree extends BPlusTree<H2Row, H2Row> {
      * and created product version on root meta page).
      *
      * @param inlineObjSupported inline POJO by created tree flag.
+     * @param inlineDcSupported inline decimal by created tree flag.
      * @throws IgniteCheckedException On error.
      */
-    private void upgradeMetaPage(boolean inlineObjSupported) throws IgniteCheckedException {
+    private void upgradeMetaPage(boolean inlineObjSupported, boolean inlineDcSupported) throws IgniteCheckedException {
         final long metaPage = acquirePage(metaPageId);
 
         try {
@@ -458,7 +475,7 @@ public class H2Tree extends BPlusTree<H2Row, H2Row> {
                 U.hexLong(metaPageId) + ']';
 
             try {
-                BPlusMetaIO.upgradePageVersion(pageAddr, inlineObjSupported, false, pageSize());
+                BPlusMetaIO.upgradePageVersion(pageAddr, inlineObjSupported, inlineDcSupported, false, pageSize());
 
                 if (wal != null)
                     wal.log(new PageSnapshot(new FullPageId(metaPageId, grpId),
@@ -746,6 +763,9 @@ public class H2Tree extends BPlusTree<H2Row, H2Row> {
         boolean inlineObjHash;
 
         /** */
+        boolean inlineDcSupported;
+
+        /** */
         IgniteProductVersion createdVer;
 
         /**
@@ -760,6 +780,7 @@ public class H2Tree extends BPlusTree<H2Row, H2Row> {
             if (flagsSupported) {
                 inlineObjSupported = io.inlineObjectSupported(pageAddr);
                 inlineObjHash = io.inlineObjectHash(pageAddr);
+                inlineDcSupported = io.inlineDecimalSupported(pageAddr);
             }
 
             createdVer = io.createdVersion(pageAddr);
@@ -798,6 +819,13 @@ public class H2Tree extends BPlusTree<H2Row, H2Row> {
          */
         public boolean inlineObjectHash() {
             return inlineObjHash;
+        }
+
+        /**
+         * @return {@code true} In case inline decimal is supported.
+         */
+        public boolean inlineDecimalSupported() {
+            return inlineDcSupported;
         }
     }
 
