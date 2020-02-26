@@ -62,7 +62,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for ModelStorateThinClientProcessor.
+ * Tests for ModelStorageThinClientProcessor.
  */
 public class ModelStorateThinClientProcessorTest extends GridCommonAbstractTest {
     /** */

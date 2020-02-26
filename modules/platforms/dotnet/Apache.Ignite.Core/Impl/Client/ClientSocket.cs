@@ -57,8 +57,11 @@ namespace Apache.Ignite.Core.Impl.Client
         /** Version 1.5.0. */
         public static readonly ClientProtocolVersion Ver150 = new ClientProtocolVersion(1, 5, 0);
 
+        /** Version 1.6.0. */
+        public static readonly ClientProtocolVersion Ver160 = new ClientProtocolVersion(1, 6, 0);
+
         /** Current version. */
-        public static readonly ClientProtocolVersion CurrentProtocolVersion = Ver150;
+        public static readonly ClientProtocolVersion CurrentProtocolVersion = Ver160;
 
         /** Handshake opcode. */
         private const byte OpHandshake = 1;
@@ -361,6 +364,7 @@ namespace Apache.Ignite.Core.Impl.Client
         private void Handshake(IgniteClientConfiguration clientConfiguration, ClientProtocolVersion version)
         {
             bool auth = version >= Ver110 && clientConfiguration.UserName != null;
+            bool features = version >= Ver160;
 
             // Send request.
             int messageLen;
@@ -377,15 +381,23 @@ namespace Apache.Ignite.Core.Impl.Client
                 // Client type: platform.
                 stream.WriteByte(ClientType);
 
+                // Writing features.
+                if (features)
+                {
+                    // TODO: Implement client-side features.
+                    var featureBytes = new byte[0];
+
+                    BinaryUtils.Marshaller.Marshal(stream, w => w.WriteByteArray(featureBytes));
+                }
+
                 // Authentication data.
                 if (auth)
                 {
-                    var writer = BinaryUtils.Marshaller.StartMarshal(stream);
-
-                    writer.WriteString(clientConfiguration.UserName);
-                    writer.WriteString(clientConfiguration.Password);
-
-                    BinaryUtils.Marshaller.FinishMarshal(writer);
+                    BinaryUtils.Marshaller.Marshal(stream, writer =>
+                    {
+                        writer.WriteString(clientConfiguration.UserName);
+                        writer.WriteString(clientConfiguration.Password);
+                    });
                 }
             }, 12, out messageLen);
 
