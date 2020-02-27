@@ -30,11 +30,17 @@ namespace ignite
         namespace thin
         {
             const ProtocolVersion DataChannel::VERSION_1_2_0(1, 2, 0);
+            const ProtocolVersion DataChannel::VERSION_1_3_0(1, 4, 0);
             const ProtocolVersion DataChannel::VERSION_1_4_0(1, 4, 0);
-            const ProtocolVersion DataChannel::VERSION_DEFAULT(VERSION_1_4_0);
+            const ProtocolVersion DataChannel::VERSION_1_5_0(1, 4, 0);
+            const ProtocolVersion DataChannel::VERSION_1_6_0(1, 4, 0);
+            const ProtocolVersion DataChannel::VERSION_DEFAULT(VERSION_1_6_0);
 
             DataChannel::VersionSet::value_type supportedArray[] = {
+                DataChannel::VERSION_1_6_0,
+                DataChannel::VERSION_1_5_0,
                 DataChannel::VERSION_1_4_0,
+                DataChannel::VERSION_1_3_0,
                 DataChannel::VERSION_1_2_0,
             };
 
@@ -282,6 +288,14 @@ namespace ignite
                 writer.WriteInt16(propVer.GetMaintenance());
 
                 writer.WriteInt8(ClientType::THIN_CLIENT);
+
+                if (propVer >= VERSION_1_6_0)
+                {
+                    // Use features for any new changes in protocol.
+                    int8_t features[] = { 0 };
+
+                    writer.WriteInt8Array(features, 0);
+                }
 
                 writer.WriteString(config.GetUser());
                 writer.WriteString(config.GetPassword());
