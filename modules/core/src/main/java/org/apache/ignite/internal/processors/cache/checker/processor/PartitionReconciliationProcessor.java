@@ -17,9 +17,12 @@
 package org.apache.ignite.internal.processors.cache.checker.processor;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,10 +42,10 @@ import org.apache.ignite.internal.processors.cache.IgniteInternalCache;
 import org.apache.ignite.internal.processors.cache.KeyCacheObject;
 import org.apache.ignite.internal.processors.cache.checker.objects.ExecutionResult;
 import org.apache.ignite.internal.processors.cache.checker.objects.PartitionBatchRequest;
-import org.apache.ignite.internal.processors.cache.checker.objects.VersionedKey;
-import org.apache.ignite.internal.processors.cache.checker.objects.ReconciliationAffectedEntries;
 import org.apache.ignite.internal.processors.cache.checker.objects.RecheckRequest;
+import org.apache.ignite.internal.processors.cache.checker.objects.ReconciliationAffectedEntries;
 import org.apache.ignite.internal.processors.cache.checker.objects.RepairRequest;
+import org.apache.ignite.internal.processors.cache.checker.objects.VersionedKey;
 import org.apache.ignite.internal.processors.cache.checker.objects.VersionedValue;
 import org.apache.ignite.internal.processors.cache.checker.processor.workload.Batch;
 import org.apache.ignite.internal.processors.cache.checker.processor.workload.Recheck;
@@ -82,7 +85,7 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
 
     /** Start execution message. */
     public static final String START_EXECUTION_MSG = "Partition reconciliation has started [repair: %s, repairAlg: %s, " +
-        "batchSize: %s, recheckAttempts: %s, parallelismLevel: %s, caches: %s].";
+        "fastCheck: %s, batchSize: %s, recheckAttempts: %s, parallelismLevel: %s, caches: %s].";
 
     /** Error reason. */
     public static final String ERROR_REASON = "Reason [msg=%s, exception=%s]";
@@ -95,6 +98,10 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
 
     /** If {@code true} - Partition Reconciliation&Fix: update from Primary partition. */
     private final boolean fixMode;
+
+    /**  */
+    private final boolean fastCheck;
+    Map<Integer, Set<Integer>> partsToValidate;
 
     /** Amount of keys to retrieve within one job. */
     private final int batchSize;
@@ -130,6 +137,7 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
      * @param ignite Local Ignite instance to be used as an entry point for the execution of the utility.
      * @param caches Collection of cache names to be checked.
      * @param fixMode Flag indicates that inconsistencies should be repaired.
+     * @param fastCheck
      * @param parallelismLevel Number of batches that can be handled simultaneously.
      * @param batchSize Amount of keys to retrieve within one job.
      * @param recheckAttempts Amount of potentially inconsistent keys recheck attempts.
@@ -142,6 +150,8 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
         IgniteEx ignite,
         Collection<String> caches,
         boolean fixMode,
+        boolean fastCheck,
+        Map<Integer, Set<Integer>> partsToValidate,
         int parallelismLevel,
         int batchSize,
         int recheckAttempts,
@@ -153,6 +163,8 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
         this.recheckDelay = recheckDelay;
         this.caches = caches;
         this.fixMode = fixMode;
+        this.fastCheck = fastCheck;
+        this.partsToValidate = partsToValidate;
         this.batchSize = batchSize;
         this.recheckAttempts = recheckAttempts;
         this.repairAlg = repairAlg;
@@ -162,7 +174,17 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
      * @return Partition reconciliation result
      */
     public ExecutionResult<ReconciliationAffectedEntries> execute() {
-        log.info(String.format(START_EXECUTION_MSG, fixMode, repairAlg, batchSize, recheckAttempts, parallelismLevel, caches));
+        if (log.isInfoEnabled()) {
+            log.info(String.format(
+                START_EXECUTION_MSG,
+                fastCheck,
+                fixMode,
+                repairAlg,
+                batchSize,
+                recheckAttempts,
+                parallelismLevel,
+                caches));
+        }
 
         try {
             for (String cache : caches) {
@@ -175,7 +197,7 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
                     continue;
                 }
 
-                int[] partitions = ignite.affinity(cache).primaryPartitions(ignite.localNode());
+                int[] partitions = partitionsForCache(cachex);
 
                 for (int partId : partitions) {
                     schedule(new Batch(sesId, UUID.randomUUID(), cache, partId, null));
@@ -238,6 +260,30 @@ public class PartitionReconciliationProcessor extends AbstractPipelineProcessor 
             log.error(errMsg, e);
 
             return new ExecutionResult<>(prepareResult(), errMsg + ' ' + String.format(ERROR_REASON, e.getMessage(), e.getClass()));
+        }
+    }
+
+    private int[] partitionsForCache(IgniteInternalCache<Object, Object> cache) {
+        int[] locParts = ignite.affinity(cache.name()).primaryPartitions(ignite.localNode());
+
+        if (!fastCheck)
+            return locParts;
+        else {
+
+            Set<Integer> parts = partsToValidate.getOrDefault(
+                ctx.cache().cacheDescriptor(cache.name()).groupId(),
+                Collections.EMPTY_SET);
+
+            parts.retainAll(Arrays.stream(locParts).boxed().collect(Collectors.toSet()));
+
+            int[] res = new int[parts.size()];
+
+            Iterator<Integer> it = parts.iterator();
+
+            for (int i = 0; i < parts.size(); ++i)
+                res[i] = it.next();
+
+            return res;
         }
     }
 

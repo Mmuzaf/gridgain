@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteLogger;
@@ -37,11 +38,13 @@ import org.apache.ignite.compute.ComputeJobResult;
 import org.apache.ignite.compute.ComputeJobResultPolicy;
 import org.apache.ignite.compute.ComputeTaskAdapter;
 import org.apache.ignite.internal.IgniteEx;
+import org.apache.ignite.internal.processors.cache.GridCachePartitionExchangeManager;
 import org.apache.ignite.internal.processors.cache.checker.objects.ExecutionResult;
 import org.apache.ignite.internal.processors.cache.checker.objects.ReconciliationAffectedEntries;
 import org.apache.ignite.internal.processors.cache.checker.objects.ReconciliationAffectedEntriesExtended;
 import org.apache.ignite.internal.processors.cache.checker.objects.ReconciliationResult;
 import org.apache.ignite.internal.processors.cache.checker.processor.PartitionReconciliationProcessor;
+import org.apache.ignite.internal.processors.cache.distributed.dht.topology.PartitionStateValidationException;
 import org.apache.ignite.internal.processors.task.GridInternal;
 import org.apache.ignite.internal.util.typedef.T2;
 import org.apache.ignite.internal.util.typedef.internal.U;
@@ -94,6 +97,19 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
         }
 
         ignite.compute().broadcastAsync(new ReconciliationSessionId(sesId, arg.parallelism())).get();
+
+        if (arg.fastCheck()) {
+            assert ignite.context().discovery().discoCache().oldestAliveServerNode().id().equals(ignite.context().localNodeId());
+
+            GridCachePartitionExchangeManager mgr = ignite.context().cache().context().exchange();
+
+            Map<Integer, PartitionStateValidationException> b = mgr.brokenPartitions;
+            Map<Integer, Set<Integer>> b2 = b.entrySet().stream().collect(Collectors.toMap(k -> k.getKey(), v -> v.getValue().failedPartitions()));
+
+            arg = new VisorPartitionReconciliationTaskArg.Builder(arg)
+                .build();
+            arg.partToValidateAndRepair = b2;
+        }
 
         for (ClusterNode node : subgrid)
             jobs.put(new PartitionReconciliationJob(arg, startTime, sesId), node);
@@ -149,9 +165,7 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
      * Holder of execution {@link PartitionReconciliationProcessor}
      */
     private static class PartitionReconciliationJob extends ComputeJobAdapter {
-        /**
-         *
-         */
+        /** */
         private static final long serialVersionUID = 0L;
 
         /** Ignite instance. */
@@ -162,19 +176,13 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
         @LoggerResource
         private IgniteLogger log;
 
-        /**
-         *
-         */
+        /** */
         private final VisorPartitionReconciliationTaskArg reconciliationTaskArg;
 
-        /**
-         *
-         */
+        /** */
         private final LocalDateTime startTime;
 
-        /**
-         *
-         */
+        /** */
         private long sesId;
 
         /**
@@ -215,6 +223,8 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
                     ignite,
                     caches,
                     reconciliationTaskArg.repair(),
+                    reconciliationTaskArg.fastCheck(),
+                    null,
                     reconciliationTaskArg.parallelism(),
                     reconciliationTaskArg.batchSize(),
                     reconciliationTaskArg.recheckAttempts(),

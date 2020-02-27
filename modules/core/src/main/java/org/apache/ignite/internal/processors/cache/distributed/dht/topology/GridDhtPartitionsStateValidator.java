@@ -72,7 +72,7 @@ public class GridDhtPartitionsStateValidator {
         GridDhtPartitionsExchangeFuture fut,
         GridDhtPartitionTopology top,
         Map<UUID, GridDhtPartitionsSingleMessage> messages
-    ) throws IgniteCheckedException {
+    ) throws PartitionStateValidationException {
         final Set<UUID> ignoringNodes = new HashSet<>();
 
         // Ignore just joined nodes.
@@ -86,8 +86,13 @@ public class GridDhtPartitionsStateValidator {
         // Validate update counters.
         Map<Integer, Map<UUID, Long>> result = validatePartitionsUpdateCounters(top, messages, ignoringNodes);
 
-        if (!result.isEmpty())
-            throw new IgniteCheckedException("Partitions update counters are inconsistent for " + fold(topVer, result));
+        if (!result.isEmpty()) {
+            throw new PartitionStateValidationException(
+                "Partitions update counters are inconsistent for " + fold(topVer, result),
+                topVer,
+                top.groupId(),
+                result.keySet());
+        }
 
         // For sizes validation ignore also nodes which are not able to send cache sizes.
         for (UUID id : messages.keySet()) {
@@ -100,8 +105,13 @@ public class GridDhtPartitionsStateValidator {
             // Validate cache sizes.
             result = validatePartitionsSizes(top, messages, ignoringNodes);
 
-            if (!result.isEmpty())
-                throw new IgniteCheckedException("Partitions cache sizes are inconsistent for " + fold(topVer, result));
+            if (!result.isEmpty()) {
+                throw new PartitionStateValidationException(
+                    "Partitions cache sizes are inconsistent for " + fold(topVer, result),
+                    topVer,
+                    top.groupId(),
+                    result.keySet());
+            }
         }
     }
 

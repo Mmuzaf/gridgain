@@ -16,11 +16,16 @@
 
 package org.apache.ignite.internal.visor.checker;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.UUID;
+import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.internal.processors.cache.checker.objects.ReconciliationResult;
 import org.apache.ignite.internal.processors.cache.verify.checker.tasks.PartitionReconciliationProcessorTask;
 import org.apache.ignite.internal.processors.task.GridInternal;
 import org.apache.ignite.internal.visor.VisorJob;
 import org.apache.ignite.internal.visor.VisorOneNodeTask;
+import org.apache.ignite.internal.visor.VisorTaskArgument;
 
 /**
  * Visor partition reconciliation task.
@@ -31,10 +36,27 @@ public class VisorPartitionReconciliationTask
     /** */
     private static final long serialVersionUID = 0L;
 
+    @Override protected Collection<UUID> jobNodes(VisorTaskArgument<VisorPartitionReconciliationTaskArg> arg) {
+        // Perhaps we can always use coordinator node to start partition reconciliation processor.
+        // In that case VisorCoordinatorNodeTask can be used instead of VisorOneNodeTask.
+        if (arg.getArgument().fastCheck()) {
+            ClusterNode crd = ignite.context().discovery().discoCache().oldestAliveServerNode();
+
+            Collection<UUID> nids = new ArrayList<>(1);
+
+            nids.add(crd == null ? ignite.localNode().id() : crd.id());
+
+            return nids;
+        }
+
+        return arg.getNodes();
+    }
+
     /** {@inheritDoc} */
     @SuppressWarnings("unchecked")
     @Override protected VisorJob<VisorPartitionReconciliationTaskArg, ReconciliationResult> job(
-        VisorPartitionReconciliationTaskArg arg) {
+        VisorPartitionReconciliationTaskArg arg
+    ) {
         return new VisorPartitionReconciliationJob(arg, debug, PartitionReconciliationProcessorTask.class);
     }
 }
