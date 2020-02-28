@@ -99,7 +99,9 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
         ignite.compute().broadcastAsync(new ReconciliationSessionId(sesId, arg.parallelism())).get();
 
         if (arg.fastCheck()) {
-            assert ignite.context().discovery().discoCache().oldestAliveServerNode().id().equals(ignite.context().localNodeId());
+            assert ignite.context().discovery().discoCache().oldestAliveServerNode().id()
+                .equals(ignite.context().localNodeId()) :
+                "PartitionReconciliationProcessorTask must be executed on the coordinator node.";
 
             GridCachePartitionExchangeManager mgr = ignite.context().cache().context().exchange();
 
@@ -107,8 +109,8 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
             Map<Integer, Set<Integer>> b2 = b.entrySet().stream().collect(Collectors.toMap(k -> k.getKey(), v -> v.getValue().failedPartitions()));
 
             arg = new VisorPartitionReconciliationTaskArg.Builder(arg)
+                .partitionsToRepair(b2)
                 .build();
-            arg.partToValidateAndRepair = b2;
         }
 
         for (ClusterNode node : subgrid)
@@ -222,13 +224,12 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
                     sesId,
                     ignite,
                     caches,
+                    reconciliationTaskArg.partitionsToRepair(),
                     reconciliationTaskArg.repair(),
-                    reconciliationTaskArg.fastCheck(),
-                    null,
+                    reconciliationTaskArg.repairAlg(),
                     reconciliationTaskArg.parallelism(),
                     reconciliationTaskArg.batchSize(),
                     reconciliationTaskArg.recheckAttempts(),
-                    reconciliationTaskArg.repairAlg(),
                     reconciliationTaskArg.recheckDelay()
                 ).execute();
 

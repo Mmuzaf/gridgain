@@ -44,6 +44,13 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
     /** Flag indicates that only subset of partitions should be checked and repaired. */
     private boolean fastCheck;
 
+    /**
+     * Collection of partitions whcih should be validated.
+     * This collection can be {@code null}, this means that all partitions should be validated/repaired.
+     * Mapping: Cache group id -> collection of partitions.
+     */
+    private Map<Integer, Set<Integer>> partsToRepair;
+
     /** If {@code true} - print data to result with sensitive information: keys and values. */
     private boolean includeSensitive;
 
@@ -65,8 +72,6 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
     /** Recheck delay seconds. */
     private int recheckDelay;
 
-    public Map<Integer, Set<Integer>> partToValidateAndRepair;
-
     /**
      * Default constructor.
      */
@@ -80,12 +85,15 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
      * @param fastCheck If {@code true} then only partitions that did not pass validation
      *                  during the last partition map exchange will be checked and repaired.
      *                  Otherwise, all partitions will be taken into account.
+     * @param partsToRepair Collection of partitions that should be checked and repaired.
+     *                      It can be {@code null}, this means all partitions will be handled.
      */
     @SuppressWarnings("AssignmentOrReturnOfFieldWithMutableType")
     public VisorPartitionReconciliationTaskArg(
         Set<String> caches,
-        boolean repair,
         boolean fastCheck,
+        Map<Integer, Set<Integer>> partsToRepair,
+        boolean repair,
         boolean includeSensitive,
         boolean locOutput,
         int parallelism,
@@ -95,10 +103,11 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
         int recheckDelay
     ) {
         this.caches = caches;
+        this.fastCheck = fastCheck;
+        this.partsToRepair = partsToRepair;
         this.includeSensitive = includeSensitive;
         this.locOutput = locOutput;
         this.repair = repair;
-        this.fastCheck = fastCheck;
         this.parallelism = parallelism;
         this.batchSize = batchSize;
         this.recheckAttempts = recheckAttempts;
@@ -128,7 +137,7 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
 
         out.writeInt(recheckDelay);
 
-        U.writeIntKeyMap(out, partToValidateAndRepair);
+        U.writeIntKeyMap(out, partsToRepair);
     }
 
     /** {@inheritDoc} */
@@ -154,7 +163,7 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
 
         recheckDelay = in.readInt();
 
-        partToValidateAndRepair = U.readIntKeyMap(in);
+        partsToRepair = U.readIntKeyMap(in);
     }
 
     /**
@@ -177,6 +186,13 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
      */
     public boolean fastCheck() {
         return fastCheck;
+    }
+
+    /**
+     * @return Collection of partitions that should be checked and repaired.
+     */
+    public Map<Integer, Set<Integer>> partitionsToRepair() {
+        return partsToRepair;
     }
 
     /**
@@ -244,6 +260,13 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
         /** Flag indicates that only subset of partitions should be checked and repaired. */
         private boolean fastCheck;
 
+        /**
+         * Collection of partitions whcih should be validated.
+         * This collection can be {@code null}, this means that all partitions should be validated/repaired.
+         * Mapping: Cache group id -> collection of partitions.
+         */
+        private Map<Integer, Set<Integer>> partsToRepair;
+
         /** If {@code true} - print data to result with sensitive information: keys and values. */
         private boolean includeSensitive;
 
@@ -292,6 +315,7 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
             locOutput = cpFrom.locOutput;
             includeSensitive = cpFrom.includeSensitive;
             fastCheck = cpFrom.fastCheck;
+            partsToRepair = cpFrom.partsToRepair;
             parallelism = cpFrom.parallelism;
             batchSize = cpFrom.batchSize;
             recheckAttempts = cpFrom.batchSize;
@@ -306,8 +330,9 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
         public VisorPartitionReconciliationTaskArg build() {
             return new VisorPartitionReconciliationTaskArg(
                 caches,
-                repair,
                 fastCheck,
+                partsToRepair,
+                repair,
                 includeSensitive,
                 locOutput,
                 parallelism,
@@ -344,6 +369,16 @@ public class VisorPartitionReconciliationTaskArg extends IgniteDataTransferObjec
          */
         public Builder fastCheck(boolean fastCheck) {
             this.fastCheck = fastCheck;
+
+            return this;
+        }
+
+        /**
+         * @param partsToRepair  Collection of partitions that should be checked and repaired.
+         * @return Builder for chaning.
+         */
+        public Builder partitionsToRepair(Map<Integer, Set<Integer>> partsToRepair) {
+            this.partsToRepair = partsToRepair;
 
             return this;
         }

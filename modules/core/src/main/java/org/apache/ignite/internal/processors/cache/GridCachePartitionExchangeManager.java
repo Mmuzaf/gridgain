@@ -181,8 +181,6 @@ import static org.apache.ignite.internal.processors.metric.GridMetricManager.PME
  * Partition exchange manager.
  */
 public class GridCachePartitionExchangeManager<K, V> extends GridCacheSharedManagerAdapter<K, V> {
-    public volatile Map<Integer, PartitionStateValidationException> brokenPartitions;
-
     /** Exchange history size. */
     private final int EXCHANGE_HISTORY_SIZE =
         IgniteSystemProperties.getInteger(IgniteSystemProperties.IGNITE_EXCHANGE_HISTORY_SIZE, 1_000);
@@ -290,6 +288,10 @@ public class GridCachePartitionExchangeManager<K, V> extends GridCacheSharedMana
 
     /** */
     private final boolean bltForInMemoryCachesSupport = isFeatureEnabled(IGNITE_BASELINE_FOR_IN_MEMORY_CACHES_FEATURE);
+
+    /** Collection of partitions that did not pass validation during the last partition map exchange. */
+    @GridToStringExclude
+    private Map<Integer, PartitionStateValidationException> invalidParts;
 
     /** Discovery listener. */
     private final DiscoveryEventListener discoLsnr = new DiscoveryEventListener() {

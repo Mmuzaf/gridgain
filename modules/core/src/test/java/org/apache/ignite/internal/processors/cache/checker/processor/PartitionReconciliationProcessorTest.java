@@ -417,8 +417,16 @@ public class PartitionReconciliationProcessorTest {
             int recheckAttempts,
             int recheckDelay
         ) throws IgniteCheckedException {
-            super(SESSION_ID, ignite, caches, fixMode, false, null, parallelismLevel, batchSize, recheckAttempts,
-                RepairAlgorithm.MAJORITY, recheckDelay);
+            super(SESSION_ID,
+                ignite,
+                caches,
+                null,
+                fixMode,
+                RepairAlgorithm.MAJORITY,
+                parallelismLevel,
+                batchSize,
+                recheckAttempts,
+                recheckDelay);
         }
 
         /** {@inheritDoc} */
