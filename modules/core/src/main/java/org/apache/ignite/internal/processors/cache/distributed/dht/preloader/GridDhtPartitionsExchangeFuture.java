@@ -16,7 +16,6 @@
 
 package org.apache.ignite.internal.processors.cache.distributed.dht.preloader;
 
-import javax.cache.expiry.EternalExpiryPolicy;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -41,6 +40,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.cache.expiry.EternalExpiryPolicy;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteLogger;
@@ -2426,9 +2426,6 @@ public class GridDhtPartitionsExchangeFuture extends GridDhtTopologyFutureAdapte
             // Update last finished future in the first.
             cctx.exchange().lastFinishedFuture(this);
 
-            cctx.exchange().brokenPartitions = invalidPartsState;
-            invalidPartsState = null;
-
             // Complete any affReady futures and update last exchange done version.
             cctx.exchange().onExchangeDone(res, initialVersion(), err0);
 
@@ -3920,9 +3917,6 @@ public class GridDhtPartitionsExchangeFuture extends GridDhtTopologyFutureAdapte
             .collect(Collectors.toList());
     }
 
-    /** Grpid -> validation result. */
-    private Map<Integer, PartitionStateValidationException> invalidPartsState = new ConcurrentHashMap<>();
-
     /**
      * Validates that partition update counters and cache sizes for all caches are consistent.
      */
@@ -3959,8 +3953,6 @@ public class GridDhtPartitionsExchangeFuture extends GridDhtTopologyFutureAdapte
                     catch (PartitionStateValidationException ex) {
                         log.warning(String.format(PARTITION_STATE_FAILED_MSG, grpCtx.cacheOrGroupName(), ex.getMessage()));
                         // TODO: Handle such errors https://issues.apache.org/jira/browse/IGNITE-7833
-
-                        invalidPartsState.put(grpCtx.groupId(), ex);
                     }
 
                     return null;

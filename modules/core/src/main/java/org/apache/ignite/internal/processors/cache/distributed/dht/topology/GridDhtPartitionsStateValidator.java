@@ -17,6 +17,7 @@
 package org.apache.ignite.internal.processors.cache.distributed.dht.topology;
 
 import java.util.AbstractMap;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -24,6 +25,7 @@ import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.events.DiscoveryEvent;
@@ -47,6 +49,13 @@ public class GridDhtPartitionsStateValidator {
 
     /** Cache shared context. */
     private final GridCacheSharedContext<?, ?> cctx;
+
+    /**
+     * Collection of partitions that did not pass validation.
+     * This collection is supported and updated by coordinator node only.
+     * Represents the following mapping: group id -> set of partitions.
+     */
+    private final Map<Integer, Set<Integer>> invalidParts = new ConcurrentHashMap<>();
 
     /**
      * Constructor.
@@ -87,6 +96,8 @@ public class GridDhtPartitionsStateValidator {
         Map<Integer, Map<UUID, Long>> result = validatePartitionsUpdateCounters(top, messages, ignoringNodes);
 
         if (!result.isEmpty()) {
+            invalidParts.putIfAbsent(top.groupId(), result.keySet());
+
             throw new PartitionStateValidationException(
                 "Partitions update counters are inconsistent for " + fold(topVer, result),
                 topVer,
@@ -106,6 +117,8 @@ public class GridDhtPartitionsStateValidator {
             result = validatePartitionsSizes(top, messages, ignoringNodes);
 
             if (!result.isEmpty()) {
+                invalidParts.putIfAbsent(top.groupId(), result.keySet());
+
                 throw new PartitionStateValidationException(
                     "Partitions cache sizes are inconsistent for " + fold(topVer, result),
                     topVer,
@@ -113,6 +126,28 @@ public class GridDhtPartitionsStateValidator {
                     result.keySet());
             }
         }
+    }
+
+    /**
+     * Returns set of partitions that did not pass validation for the given partition topology.
+     *
+     * @param top Partition topology.
+     * @return Set of invalid partitions.
+     * @see GridDhtPartitionsStateValidator#validatePartitionCountersAndSizes
+     */
+    public Set<Integer> invalidPartitions(GridDhtPartitionTopology top) {
+        return invalidPartitions(top.groupId());
+    }
+
+    /**
+     * Returns set of partitions that did not pass validation for the given cache group.
+     *
+     * @param groupId Cache group id.
+     * @return Set of invalid partitions.
+     * @see GridDhtPartitionsStateValidator#validatePartitionCountersAndSizes
+     */
+    public Set<Integer> invalidPartitions(int groupId) {
+        return invalidParts.getOrDefault(groupId, Collections.emptySet());
     }
 
     /**

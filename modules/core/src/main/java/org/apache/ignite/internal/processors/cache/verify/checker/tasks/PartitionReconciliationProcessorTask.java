@@ -188,10 +188,17 @@ public class PartitionReconciliationProcessorTask extends ComputeTaskAdapter<Vis
         private long sesId;
 
         /**
+         * Create a new instance of the job.
          *
+         * @param arg Reconciliation parameters.
+         * @param startTime Start time of the whole task.
+         * @param sesId Session identifier.
          */
-        public PartitionReconciliationJob(VisorPartitionReconciliationTaskArg arg, LocalDateTime startTime,
-            long sesId) {
+        public PartitionReconciliationJob(
+            VisorPartitionReconciliationTaskArg arg,
+            LocalDateTime startTime,
+            long sesId
+        ) {
             this.reconciliationTaskArg = arg;
             this.startTime = startTime;
             this.sesId = sesId;
