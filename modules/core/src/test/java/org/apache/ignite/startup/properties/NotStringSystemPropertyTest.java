@@ -27,7 +27,7 @@ import org.junit.Test;
  */
 public class NotStringSystemPropertyTest extends GridCommonAbstractTest {
     /** {@inheritDoc} */
-    @Override protected IgniteConfiguration optimize(IgniteConfiguration cfg) throws IgniteCheckedException {
+    @Override protected IgniteConfiguration optimize(IgniteConfiguration cfg) {
         IgniteConfiguration oCfg = super.optimize(cfg);
 
         oCfg.setIncludeProperties(null);

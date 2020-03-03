@@ -3732,7 +3732,7 @@ public class IgniteKernal implements IgniteEx, IgniteMXBean, Externalizable {
 
     /** {@inheritDoc} */
     @Override public void close() throws IgniteException {
-        Ignition.stop(igniteInstanceName, true);
+        Ignition.stop(igniteInstanceName, !cfg.isGracefulShutdown());
     }
 
     /** {@inheritDoc} */

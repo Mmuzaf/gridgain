@@ -187,15 +187,36 @@ public class Ignition {
      * Stops default grid. This method is identical to {@code G.stop(null, cancel)} apply.
      * Note that method does not wait for all tasks to be completed.
      *
-     * @param cancel If {@code true} then all jobs currently executing on
-     *      default grid will be cancelled by calling {@link org.apache.ignite.compute.ComputeJob#cancel()}
-     *      method. Note that just like with {@link Thread#interrupt()}, it is
-     *      up to the actual job to exit from execution
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. Takes precedence over the value of
+     *      {@link IgniteConfiguration#isGracefulShutdown()}.
+     */
+    public static boolean stop(boolean cancel) {
+        return IgnitionEx.stop(cancel, null);
+    }
+
+    /**
+     * Stops default grid. This method is identical to {@code G.stop(null, cancel)} apply.
+     * Note that method does not wait for all tasks to be completed.
+     *
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. Takes precedence over the value of
+     *      {@link IgniteConfiguration#isGracefulShutdown()}.
+     * @param waitForBackups If {@code true} then node will wait until all of its data is backed up before shutting
+     *      down. Takes precedence over the value of {@link IgniteConfiguration#isWaitForBackupsOnShutdown()}.
      * @return {@code true} if default grid instance was indeed stopped,
      *      {@code false} otherwise (if it was not started).
      */
-    public static boolean stop(boolean cancel) {
-        return IgnitionEx.stop(cancel);
+    public static boolean stop(boolean cancel, boolean waitForBackups) {
+        return IgnitionEx.stop(cancel, waitForBackups);
     }
 
     /**
@@ -208,17 +229,41 @@ public class Ignition {
      * @param name Ignite instance name. If {@code null}, then default no-name Ignite instance will
      *      be stopped.
      * @param cancel If {@code true} then all jobs currently will be cancelled
-     *      by calling {@link org.apache.ignite.compute.ComputeJob#cancel()} method. Note that just like with
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
      *      {@link Thread#interrupt()}, it is up to the actual job to exit from
      *      execution. If {@code false}, then jobs currently running will not be
      *      canceled. In either case, grid node will wait for completion of all
-     *      jobs running on it before stopping.
+     *      jobs running on it before stopping. Takes precedence over the value of
+     *      {@link IgniteConfiguration#isGracefulShutdown()}.
+     */
+    public static boolean stop(String name, boolean cancel) {
+        return IgnitionEx.stop(name, cancel, null, false);
+    }
+
+    /**
+     * Stops named Ignite instance. If {@code cancel} flag is set to {@code true} then
+     * all jobs currently executing on local node will be interrupted. If
+     * Ignite instance name is {@code null}, then default no-name Ignite instance will be stopped.
+     * If wait parameter is set to {@code true} then Ignite instance will wait for all
+     * tasks to be finished.
+     *
+     * @param name Ignite instance name. If {@code null}, then default no-name Ignite instance will
+     *      be stopped.
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. Takes precedence over the value of
+     *      {@link IgniteConfiguration#isGracefulShutdown()}.
+     * @param waitForBackups If {@code true} then node will wait until all of its data is backed up before shutting
+     *      down. Takes precedence over the value of {@link IgniteConfiguration#isWaitForBackupsOnShutdown()}.
      * @return {@code true} if named Ignite instance was indeed found and stopped,
      *      {@code false} otherwise (the instance with given {@code name} was
      *      not found).
      */
-    public static boolean stop(String name, boolean cancel) {
-        return IgnitionEx.stop(name, cancel, false);
+    public static boolean stop(String name, boolean cancel, boolean waitForBackups) {
+        return IgnitionEx.stop(name, cancel, waitForBackups, false);
     }
 
     /**
@@ -231,13 +276,40 @@ public class Ignition {
      * instead of blanket operation. In most cases, the party that started the grid instance
      * should be responsible for stopping it.
      *
-     * @param cancel If {@code true} then all jobs currently executing on
-     *      all grids will be cancelled by calling {@link org.apache.ignite.compute.ComputeJob#cancel()}
-     *      method. Note that just like with {@link Thread#interrupt()}, it is
-     *      up to the actual job to exit from execution
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. Takes precedence over the value of
+     *      {@link IgniteConfiguration#isGracefulShutdown()}.
      */
     public static void stopAll(boolean cancel) {
-        IgnitionEx.stopAll(cancel);
+        IgnitionEx.stopAll(cancel, null);
+    }
+
+    /**
+     * Stops <b>all</b> started grids in current JVM. If {@code cancel} flag is set to {@code true} then
+     * all jobs currently executing on local node will be interrupted.
+     * If wait parameter is set to {@code true} then grid will wait for all
+     * tasks to be finished.
+     * <p>
+     * <b>Note:</b> it is usually safer and more appropriate to stop grid instances individually
+     * instead of blanket operation. In most cases, the party that started the grid instance
+     * should be responsible for stopping it.
+     *
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. Takes precedence over the value of
+     *      {@link IgniteConfiguration#isGracefulShutdown()}.
+     * @param waitForBackups If {@code true} then node will wait until all of its data is backed up before shutting
+     *      down. Takes precedence over the value of {@link IgniteConfiguration#isWaitForBackupsOnShutdown()}.
+     */
+    public static void stopAll(boolean cancel, boolean waitForBackups) {
+        IgnitionEx.stopAll(cancel, waitForBackups);
     }
 
     /**

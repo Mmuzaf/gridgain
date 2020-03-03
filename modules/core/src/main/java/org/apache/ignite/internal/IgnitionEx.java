@@ -57,6 +57,7 @@ import org.apache.ignite.IgniteState;
 import org.apache.ignite.IgniteSystemProperties;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.IgnitionListener;
+import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.cache.affinity.rendezvous.RendezvousAffinityFunction;
 import org.apache.ignite.compute.ComputeJob;
 import org.apache.ignite.configuration.CacheConfiguration;
@@ -75,6 +76,7 @@ import org.apache.ignite.failure.FailureType;
 import org.apache.ignite.internal.binary.BinaryMarshaller;
 import org.apache.ignite.internal.managers.communication.GridIoPolicy;
 import org.apache.ignite.internal.managers.discovery.GridDiscoveryManager;
+import org.apache.ignite.internal.processors.cache.IgniteCacheProxy;
 import org.apache.ignite.internal.processors.datastructures.DataStructuresProcessor;
 import org.apache.ignite.internal.processors.resource.GridSpringResourceContext;
 import org.apache.ignite.internal.processors.tracing.NoopTracingSpi;
@@ -90,6 +92,7 @@ import org.apache.ignite.internal.util.typedef.T2;
 import org.apache.ignite.internal.util.typedef.X;
 import org.apache.ignite.internal.util.typedef.internal.A;
 import org.apache.ignite.internal.util.typedef.internal.CU;
+import org.apache.ignite.internal.util.typedef.internal.LT;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.internal.util.worker.GridWorker;
@@ -141,6 +144,7 @@ import static org.apache.ignite.IgniteSystemProperties.IGNITE_SUCCESS_FILE;
 import static org.apache.ignite.IgniteSystemProperties.IGNITE_SYSTEM_WORKER_BLOCKED_TIMEOUT;
 import static org.apache.ignite.IgniteSystemProperties.getLong;
 import static org.apache.ignite.cache.CacheAtomicityMode.TRANSACTIONAL;
+import static org.apache.ignite.cache.CacheMode.PARTITIONED;
 import static org.apache.ignite.cache.CacheMode.REPLICATED;
 import static org.apache.ignite.cache.CacheRebalanceMode.SYNC;
 import static org.apache.ignite.cache.CacheWriteSynchronizationMode.FULL_SYNC;
@@ -289,15 +293,20 @@ public class IgnitionEx {
      * Stops default grid. This method is identical to {@code G.stop(null, cancel)} apply.
      * Note that method does not wait for all tasks to be completed.
      *
-     * @param cancel If {@code true} then all jobs currently executing on
-     *      default grid will be cancelled by calling {@link ComputeJob#cancel()}
-     *      method. Note that just like with {@link Thread#interrupt()}, it is
-     *      up to the actual job to exit from execution
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. If {@code null} then
+     *      not-{@link IgniteConfiguration#isGracefulShutdown()} is used instead.
+     * @param waitForBackups If {@code true} then node will wait until all of its data is backed up before shutting
+     *      down. If {@code null} then {@link IgniteConfiguration#isWaitForBackupsOnShutdown()} is used instead.
      * @return {@code true} if default grid instance was indeed stopped,
      *      {@code false} otherwise (if it was not started).
      */
-    public static boolean stop(boolean cancel) {
-        return stop(null, cancel, false);
+    public static boolean stop(Boolean cancel, Boolean waitForBackups) {
+        return stop(null, cancel, waitForBackups, false);
     }
 
     /**
@@ -314,13 +323,16 @@ public class IgnitionEx {
      *      {@link Thread#interrupt()}, it is up to the actual job to exit from
      *      execution. If {@code false}, then jobs currently running will not be
      *      canceled. In either case, grid node will wait for completion of all
-     *      jobs running on it before stopping.
+     *      jobs running on it before stopping. If {@code null} then
+     *      not-{@link IgniteConfiguration#isGracefulShutdown()} is used instead.
+     * @param waitForBackups If {@code true} then node will wait until all of its data is backed up before shutting
+     *      down. If {@code null} then {@link IgniteConfiguration#isWaitForBackupsOnShutdown()} is used instead.
      * @param stopNotStarted If {@code true} and node start did not finish then interrupts starting thread.
      * @return {@code true} if named Ignite instance was indeed found and stopped,
      *      {@code false} otherwise (the instance with given {@code name} was
      *      not found).
      */
-    public static boolean stop(@Nullable String name, boolean cancel, boolean stopNotStarted) {
+    public static boolean stop(@Nullable String name, Boolean cancel, Boolean waitForBackups, boolean stopNotStarted) {
         IgniteNamedInstance grid = name != null ? grids.get(name) : dfltGrid;
 
         if (grid != null && stopNotStarted && grid.startLatch.getCount() != 0) {
@@ -330,7 +342,8 @@ public class IgnitionEx {
         }
 
         if (grid != null && grid.state() == STARTED) {
-            grid.stop(cancel);
+            grid.stop(cancel != null ? cancel : !grid.grid().configuration().isGracefulShutdown(),
+                waitForBackups != null ? waitForBackups : grid.grid().configuration().isWaitForBackupsOnShutdown());
 
             boolean fireEvt;
 
@@ -358,11 +371,14 @@ public class IgnitionEx {
     }
 
     /**
+     * @deprecated
+     *
      * Behavior of the method is the almost same as {@link IgnitionEx#stop(String, boolean, boolean)}.
      * If node stopping process will not be finished within {@code timeoutMs} whole JVM will be killed.
      *
      * @param timeoutMs Timeout to wait graceful stopping.
      */
+    @Deprecated
     public static boolean stop(@Nullable String name, boolean cancel, boolean stopNotStarted, long timeoutMs) {
         final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
@@ -380,7 +396,7 @@ public class IgnitionEx {
             }
         }, timeoutMs, TimeUnit.MILLISECONDS);
 
-        boolean success = stop(name, cancel, stopNotStarted);
+        boolean success = stop(name, cancel, null, stopNotStarted);
 
         executor.shutdownNow();
 
@@ -397,33 +413,40 @@ public class IgnitionEx {
      * instead of blanket operation. In most cases, the party that started the grid instance
      * should be responsible for stopping it.
      *
-     * @param cancel If {@code true} then all jobs currently executing on
-     *      all grids will be cancelled by calling {@link ComputeJob#cancel()}
-     *      method. Note that just like with {@link Thread#interrupt()}, it is
-     *      up to the actual job to exit from execution
+     * @param cancel If {@code true} then all jobs currently will be cancelled
+     *      by calling {@link ComputeJob#cancel()} method. Note that just like with
+     *      {@link Thread#interrupt()}, it is up to the actual job to exit from
+     *      execution. If {@code false}, then jobs currently running will not be
+     *      canceled. In either case, grid node will wait for completion of all
+     *      jobs running on it before stopping. If {@code null} then
+     *      not-{@link IgniteConfiguration#isGracefulShutdown()} is used instead.
+     * @param waitForBackups If {@code true} then node will wait until all of its data is backed up before shutting
+     *      down. If {@code null} then {@link IgniteConfiguration#isWaitForBackupsOnShutdown()} is used instead.
      */
-    public static void stopAll(boolean cancel) {
-        IgniteNamedInstance dfltGrid0 = dfltGrid;
+    public static void stopAll(Boolean cancel, Boolean waitForBackups) {
+        IgniteNamedInstance grid0 = dfltGrid;
 
-        if (dfltGrid0 != null) {
-            dfltGrid0.stop(cancel);
+        if (grid0 != null) {
+            grid0.stop(cancel != null ? cancel : !grid0.grid().configuration().isGracefulShutdown(),
+                waitForBackups != null ? waitForBackups : grid0.grid().configuration().isWaitForBackupsOnShutdown());
 
             boolean fireEvt;
 
             synchronized (dfltGridMux) {
-                fireEvt = dfltGrid == dfltGrid0;
+                fireEvt = dfltGrid == grid0;
 
                 if (fireEvt)
                     dfltGrid = null;
             }
 
             if (fireEvt)
-                notifyStateChange(dfltGrid0.getName(), dfltGrid0.state());
+                notifyStateChange(grid0.getName(), grid0.state());
         }
 
         // Stop the rest and clear grids map.
         for (IgniteNamedInstance grid : grids.values()) {
-            grid.stop(cancel);
+            grid.stop(cancel != null ? cancel : !grid.grid().configuration().isGracefulShutdown(),
+                waitForBackups != null ? waitForBackups : grid.grid().configuration().isWaitForBackupsOnShutdown());
 
             boolean fireEvt = grids.remove(grid.getName(), grid);
 
@@ -473,7 +496,7 @@ public class IgnitionEx {
             // the start up sequence again.
             System.setProperty(IGNITE_RESTART_CODE, Integer.toString(Ignition.RESTART_EXIT_CODE));
 
-            stopAll(cancel);
+            stopAll(cancel, null);
 
             // This basically leaves loaders hang - we accept it.
             System.exit(Ignition.RESTART_EXIT_CODE);
@@ -500,7 +523,7 @@ public class IgnitionEx {
      * @see Ignition#KILL_EXIT_CODE
      */
     public static void kill(boolean cancel) {
-        stopAll(cancel);
+        stopAll(cancel, null);
 
         // This basically leaves loaders hang - we accept it.
         System.exit(Ignition.KILL_EXIT_CODE);
@@ -1040,7 +1063,7 @@ public class IgnitionEx {
             // Stop all instances started so far.
             for (IgniteNamedInstance grid : grids) {
                 try {
-                    grid.stop(true);
+                    grid.stop(true, false);
                 }
                 catch (Exception e1) {
                     U.error(grid.log, "Error when stopping grid: " + grid, e1);
@@ -1592,6 +1615,9 @@ public class IgnitionEx {
         /** Start latch. */
         private final CountDownLatch startLatch = new CountDownLatch(1);
 
+        /** Raised if node is waiting for backups before shutdown. Set to false to end wait. */
+        private volatile boolean waitingForBackups = false;
+
         /**
          * Thread that starts this named instance. This field can be non-volatile since
          * it makes sense only for thread where it was originally initialized.
@@ -2083,7 +2109,10 @@ public class IgnitionEx {
                             if (log.isInfoEnabled())
                                 log.info("Invoking shutdown hook...");
 
-                            IgniteNamedInstance.this.stop(true);
+                            IgniteNamedInstance ignite = IgniteNamedInstance.this;
+
+                            ignite.stop(!ignite.grid().configuration().isGracefulShutdown(),
+                                ignite.grid().configuration().isWaitForBackupsOnShutdown());
                         }
                     });
 
@@ -2091,7 +2120,7 @@ public class IgnitionEx {
                         log.debug("Shutdown hook is installed.");
                 }
                 catch (IllegalStateException e) {
-                    stop(true);
+                    stop(true, false);
 
                     throw new IgniteCheckedException("Failed to install shutdown hook.", e);
                 }
@@ -2550,20 +2579,28 @@ public class IgnitionEx {
          *
          * @param cancel Flag indicating whether all currently running jobs
          *      should be cancelled.
+         * @param waitForBackups Flag indicating whether sufficient backups on caches
+         *      should be waited for.
          */
-        void stop(boolean cancel) {
+        void stop(boolean cancel, boolean waitForBackups) {
             // Stop cannot be called prior to start from public API,
             // since it checks for STARTED state. So, we can assert here.
             assert startGuard.get();
 
-            stop0(cancel);
+            // If waiting for backups due to earlier invocation of stop(), stop wait and proceed shutting down.
+            if (!waitForBackups && waitingForBackups)
+                waitingForBackups = false;
+
+            stop0(cancel, waitForBackups);
         }
 
         /**
          * @param cancel Flag indicating whether all currently running jobs
          *      should be cancelled.
+         * @param waitForBackups Flag indicating whether sufficient backups on caches
+         *      should be waited for.
          */
-        private synchronized void stop0(boolean cancel) {
+        private synchronized void stop0(boolean cancel, boolean waitForBackups) {
             IgniteKernal grid0 = grid;
 
             // Double check.
@@ -2574,7 +2611,7 @@ public class IgnitionEx {
                 return;
             }
 
-            if (shutdownHook != null)
+            if (shutdownHook != null) {
                 try {
                     Runtime.getRuntime().removeShutdownHook(shutdownHook);
 
@@ -2588,6 +2625,43 @@ public class IgnitionEx {
                     if (log != null && log.isDebugEnabled())
                         log.debug("Shutdown is in progress (ignoring): " + e.getMessage());
                 }
+            }
+
+            if (waitForBackups) {
+                if (log != null && log.isInfoEnabled())
+                    log.info("Checking caches for sufficient backup factor...");
+
+                boolean blocked;
+
+                do {
+                    blocked = false;
+
+                    for (IgniteCacheProxy cache : grid().caches()) {
+                        if (cache.context().config().getCacheMode() == PARTITIONED &&
+                            cache.context().config().getBackups() > 0 &&
+                            1 == cache.context().group().metrics().getLocalNodeMinimumNumberOfPartitionCopies()) {
+                            if (log != null) {
+                                LT.warn(log, "Not performing node shutdown due to potential loss on cache [name=" +
+                                    cache.getName() + ", grp=" + cache.context().group().name() + "]");
+                            }
+
+                            blocked = true;
+                        }
+                    }
+
+                    if (blocked) {
+                        try {
+                            IgniteUtils.sleep(10000);
+                        }
+                        catch (IgniteInterruptedCheckedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                }
+                while (blocked);
+            }
+
+            //ignite.grid().
 
             // Unregister Ignite MBean.
             unregisterFactoryMBean();
